@@ -9,9 +9,28 @@ from .scanner import scrape_url
 from .llm_provider import analyze_text
 from .scoring import calculate_score
 from .funding import fetch_defillama_protocols
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
 
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
+
+# Path tới build React
+frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+if os.path.exists(frontend_path):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
+
+    @app.get("/")
+    def serve_react():
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+
+
 
 def get_db():
     db = SessionLocal()
