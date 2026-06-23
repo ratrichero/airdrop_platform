@@ -1,27 +1,37 @@
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime
+from sqlalchemy import Column, Integer, String, Float, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
+
 
 class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    source = Column(String)
-    url = Column(String)
     chain = Column(String)
     funding = Column(Float)
+    has_token = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class Analysis(Base):
-    __tablename__ = "analysis"
+    analysis = relationship("RetroAnalysis", back_populates="project")
+
+
+class RetroAnalysis(Base):
+    __tablename__ = "retro_analysis"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer)
-    legitimacy = Column(Integer)
-    complexity = Column(Integer)
-    capital = Column(Float)
-    risk = Column(String)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+
+    retro_probability = Column(Float)
+    snapshot_likelihood = Column(Float)
+    funding_tier = Column(Integer)
+    effort_level = Column(Integer)
+    sybil_strength = Column(Integer)
+    capital_required = Column(Float)
+    deep_score = Column(Float)
     strategy = Column(Text)
-    final_score = Column(Float)
+
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("Project", back_populates="analysis")

@@ -5,6 +5,24 @@ import json
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 
+DEEP_PROMPT = """
+You are a professional retroactive airdrop analyst.
+
+Return ONLY valid JSON:
+
+{
+  "retro_probability": 0-1,
+  "snapshot_likelihood": 0-1,
+  "funding_tier": 1-5,
+  "effort_level": 1-5,
+  "sybil_strength": 1-5,
+  "capital_required": number,
+  "strategy": "short actionable strategy"
+}
+
+Project info:
+"""
+
 def call_groq(prompt):
     r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -30,20 +48,9 @@ def call_gemini(prompt):
     )
     return r.json()["candidates"][0]["content"]["parts"][0]["text"]
 
-def analyze_text(text):
-    prompt = f"""
-Return ONLY valid JSON:
+def deep_analyze(project_text):
+    prompt = DEEP_PROMPT + project_text[:3000]
 
-{{
- "legitimacy": 1-5,
- "complexity": 1-5,
- "capital": number,
- "risk": "low/medium/high",
- "strategy": "short suggestion"
-}}
-
-{text[:4000]}
-"""
     try:
         output = call_groq(prompt)
     except:

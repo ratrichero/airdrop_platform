@@ -1,24 +1,16 @@
-import os
-import json
-import csv
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-
 from .database import Base, engine, SessionLocal
-from .models import Project, Analysis
-from .scanner import scrape_url
-from .llm_provider import analyze_text
-from .scoring import calculate_score
-from .funding import fetch_defillama_protocols
+from .models import Project, RetroAnalysis
+from .funding_engine import fetch_defillama_projects
+from .llm_provider import deep_analyze
+from .ranking_engine import calculate_deep_score
 
-# ✅ Create tables
+Base.metadata.drop_all(bind=engine)   # reset clean
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# ✅ Dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -26,158 +18,70 @@ def get_db():
     finally:
         db.close()
 
-# =====================================================
-# ✅ API ROUTES (PREFIXED WITH /api)
-# =====================================================
 
-@app.post("/api/scan")
-def scan(url: str, db: Session = Depends(get_db)):
-    try:
-        text = scrape_url(url)
-        data = analyze_text(text)
+@app.post("/api/scan/funding")
+def scan_funding(db: Session = Depends(get_db)):
 
-        score = calculate_score(
-            data["legitimacy"],
-            data["complexity"],
-            data["capital"]
-        )
+    projects = fetch_defillama_projects()
+    results = []
+
+    for p in projects:
+        if p["has_token"]:
+            continue
+
+        text = f"{p['name']} {p['chain']} funding:{p['funding']}"
+        data = deep_analyze(text)
+
+        score = calculate_deep_score(data, p["funding"], p["chain"])
 
         project = Project(
-            name=url,
-            source="manual",
-            url=url,
-            chain="unknown",
-            funding=0
+            name=p["name"],
+            chain=p["chain"],
+            funding=p["funding"],
+            has_token=p["has_token"]
         )
 
         db.add(project)
         db.commit()
         db.refresh(project)
 
-        analysis = Analysis(
+        analysis = RetroAnalysis(
             project_id=project.id,
-            legitimacy=data["legitimacy"],
-            complexity=data["complexity"],
-            capital=data["capital"],
-            risk=data["risk"],
-            strategy=data["strategy"],
-            final_score=score
+            retro_probability=data["retro_probability"],
+            snapshot_likelihood=data["snapshot_likelihood"],
+            funding_tier=data["funding_tier"],
+            effort_level=data["effort_level"],
+            sybil_strength=data["sybil_strength"],
+            capital_required=data["capital_required"],
+            deep_score=score,
+            strategy=data["strategy"]
         )
 
         db.add(analysis)
         db.commit()
 
-        return {"success": True, "score": score}
+        results.append({
+            "name": p["name"],
+            "score": score
+        })
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/projects")
-def list_projects(chain: str = None, db: Session = Depends(get_db)):
-    query = db.query(Project)
-
-    if chain:
-        query = query.filter(Project.chain == chain)
-
-    return query.all()
+    return results
 
 
-@app.post("/api/scan/funding")
-def scan_funding(db: Session = Depends(get_db)):
-    projects = fetch_defillama_protocols()
-    results = []
+@app.get("/api/top")
+def top_projects(db: Session = Depends(get_db)):
+    rows = db.query(Project, RetroAnalysis).join(
+        RetroAnalysis, Project.id == RetroAnalysis.project_id
+    ).order_by(RetroAnalysis.deep_score.desc()).limit(20).all()
 
-    for p in projects[:10]:
-        try:
-            text = f"{p['name']} {p['chain']} {p['funding']}"
-            data = analyze_text(text)
-
-            score = calculate_score(
-                data["legitimacy"],
-                data["complexity"],
-                data["capital"]
-            )
-
-            project = Project(
-                name=p["name"],
-                source="funding",
-                url=p["url"],
-                chain=p["chain"],
-                funding=p["funding"]
-            )
-
-            db.add(project)
-            db.commit()
-            db.refresh(project)
-
-            analysis = Analysis(
-                project_id=project.id,
-                legitimacy=data["legitimacy"],
-                complexity=data["complexity"],
-                capital=data["capital"],
-                risk=data["risk"],
-                strategy=data["strategy"],
-                final_score=score
-            )
-
-            db.add(analysis)
-            db.commit()
-
-            results.append({"name": p["name"], "score": score})
-
-        except:
-            continue
-
-    return {"results": results}
-
-
-@app.get("/api/export/csv")
-def export_csv(db: Session = Depends(get_db)):
-    rows = db.query(Project, Analysis).join(
-        Analysis, Project.id == Analysis.project_id
-    ).all()
-
-    def generate():
-        yield "name,chain,funding,legitimacy,complexity,capital,risk,score,strategy\n"
-        for project, analysis in rows:
-            yield f"{project.name},{project.chain},{project.funding},{analysis.legitimacy},{analysis.complexity},{analysis.capital},{analysis.risk},{analysis.final_score},{analysis.strategy}\n"
-
-    return StreamingResponse(generate(), media_type="text/csv")
-
-
-@app.get("/api/health")
-def health():
-    return {"status": "ok"}
-
-
-# =====================================================
-# ✅ FRONTEND STATIC SERVING
-# =====================================================
-
-frontend_path = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "frontend",
-    "dist"
-)
-
-# ✅ Serve assets
-if os.path.exists(frontend_path):
-
-    app.mount(
-        "/assets",
-        StaticFiles(directory=os.path.join(frontend_path, "assets")),
-        name="assets"
-    )
-
-    @app.get("/")
-    def serve_root():
-        return FileResponse(os.path.join(frontend_path, "index.html"))
-
-    # ✅ SPA fallback (ONLY for non-API routes)
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        if full_path.startswith("api"):
-            raise HTTPException(status_code=404, detail="API route not found")
-        return FileResponse(os.path.join(frontend_path, "index.html"))
+    return [
+        {
+            "name": project.name,
+            "chain": project.chain,
+            "funding": project.funding,
+            "score": analysis.deep_score,
+            "retro_probability": analysis.retro_probability,
+            "capital_required": analysis.capital_required
+        }
+        for project, analysis in rows
+    ]
