@@ -28,6 +28,13 @@ def get_db():
 def startup_event():
     start_scheduler()
 
+@app.get("/api/debug-count")
+def debug_count(db: Session = Depends(get_db)):
+    return {
+        "projects": db.query(Project).count(),
+        "analysis": db.query(RetroAnalysis).count()
+    }
+
 @app.post("/api/manual-scan")
 def manual_scan(db: Session = Depends(get_db)):
 
@@ -36,7 +43,10 @@ def manual_scan(db: Session = Depends(get_db)):
 
     for p in projects:
 
-        if p["has_token"]:
+        #if p["has_token"]:
+            #continue
+
+        if p["has_token"] and p["funding"] < 50000000:
             continue
 
         text = f"{p['name']} {p['chain']} funding:{p['funding']}"
@@ -44,6 +54,7 @@ def manual_scan(db: Session = Depends(get_db)):
         try:
             data = deep_analyze(text)
         except:
+            print("LLM ERROR:", e)
             continue
 
         score = calculate_score(data, p["funding"], p["chain"])
