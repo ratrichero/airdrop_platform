@@ -1,6 +1,6 @@
 import requests
 import json
-from config import GROQ_API_KEY, GEMINI_API_KEY
+from .config import GROQ_API_KEY, GEMINI_API_KEY
 
 PROMPT = """
 You are a professional retroactive airdrop analyst.

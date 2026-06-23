@@ -1,10 +1,10 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from funding_engine import fetch_defillama
-from llm_engine import deep_analyze
-from ranking_engine import calculate_score
-from sybil_engine import classify_sybil
-from database import SessionLocal
-from models import Project, RetroAnalysis
+from .funding_engine import fetch_defillama
+from .llm_engine import deep_analyze
+from .ranking_engine import calculate_score
+from .sybil_engine import classify_sybil
+from .database import SessionLocal
+from .models import Project, RetroAnalysis
 
 def auto_scan():
 
