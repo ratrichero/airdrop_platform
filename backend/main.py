@@ -45,6 +45,8 @@ def manual_scan(db: Session = Depends(get_db)):
 
         #if p["has_token"]:
             #continue
+        if not is_candidate(p):
+            continue
 
         if p["has_token"] and p["funding"] < 50000000:
             continue

@@ -15,3 +15,17 @@ def fetch_defillama(limit=20):
         })
 
     return projects
+
+def is_candidate(project):
+
+    name = project["name"].lower()
+
+    # Skip CEX
+    if any(x in name for x in ["binance", "okx", "bitfinex", "bybit", "robinhood"]):
+        return False
+
+    # Skip giant protocols
+    if project["funding"] > 5_000_000_000:
+        return False
+
+    return True
