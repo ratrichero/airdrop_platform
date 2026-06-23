@@ -4,13 +4,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from database import Base, engine, SessionLocal
-from models import Project, RetroAnalysis
-from scheduler import start_scheduler
-from funding_engine import fetch_defillama
-from llm_engine import deep_analyze
-from ranking_engine import calculate_score
-from sybil_engine import classify_sybil
+from .database import Base, engine, SessionLocal
+from .models import Project, RetroAnalysis
+from .scheduler import start_scheduler
+from .funding_engine import fetch_defillama
+from .llm_engine import deep_analyze
+from .ranking_engine import calculate_score
+from .sybil_engine import classify_sybil
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
