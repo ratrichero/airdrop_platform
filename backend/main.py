@@ -1,12 +1,11 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
-from .database import Base, engine, SessionLocal
-from .models import Project, RetroAnalysis
-from .funding_engine import fetch_defillama_projects
-from .llm_provider import deep_analyze
-from .ranking_engine import calculate_deep_score
+from database import Base, engine, SessionLocal
+from models import Project, RetroAnalysis
+from engine import apply_decay
+from scheduler import start_scheduler
 
-Base.metadata.drop_all(bind=engine)   # reset clean
+Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -18,27 +17,63 @@ def get_db():
     finally:
         db.close()
 
+@app.on_event("startup")
+def startup_event():
+    start_scheduler()
 
-@app.post("/api/scan/funding")
-def scan_funding(db: Session = Depends(get_db)):
+@app.get("/api/top")
+def top(db: Session = Depends(get_db)):
 
-    projects = fetch_defillama_projects()
+    rows = db.query(Project, RetroAnalysis).join(
+        RetroAnalysis, Project.id == RetroAnalysis.project_id
+    ).order_by(RetroAnalysis.deep_score.desc()).limit(20).all()
+
+    return [
+        {
+            "name": p.name,
+            "chain": p.chain,
+            "funding": p.funding,
+            "score": apply_decay(a.deep_score, a.created_at),
+            "retro_probability": a.retro_probability,
+            "capital_required": a.capital_required
+        }
+        for p, a in rows
+    ]
+
+@app.get("/api/health")
+def health():
+    return {"status": "running"}
+
+from engine import fetch_defillama, calculate_score
+from llm import deep_analyze
+from models import Project, RetroAnalysis
+
+@app.post("/api/manual-scan")
+def manual_scan(db: Session = Depends(get_db)):
+
+    projects = fetch_defillama(limit=10)
     results = []
 
     for p in projects:
-        if p["has_token"]:
+
+        has_token = bool(p.get("symbol"))
+        if has_token:
             continue
 
-        text = f"{p['name']} {p['chain']} funding:{p['funding']}"
-        data = deep_analyze(text)
+        text = f"{p.get('name')} {p.get('chain')} funding:{p.get('tvl',0)}"
 
-        score = calculate_deep_score(data, p["funding"], p["chain"])
+        try:
+            data = deep_analyze(text)
+        except:
+            continue
+
+        score = calculate_score(data, p.get("tvl",0), p.get("chain","Unknown"))
 
         project = Project(
-            name=p["name"],
-            chain=p["chain"],
-            funding=p["funding"],
-            has_token=p["has_token"]
+            name=p.get("name"),
+            chain=p.get("chain","Unknown"),
+            funding=p.get("tvl",0),
+            has_token=has_token
         )
 
         db.add(project)
@@ -61,27 +96,11 @@ def scan_funding(db: Session = Depends(get_db)):
         db.commit()
 
         results.append({
-            "name": p["name"],
+            "name": p.get("name"),
             "score": score
         })
 
-    return results
-
-
-@app.get("/api/top")
-def top_projects(db: Session = Depends(get_db)):
-    rows = db.query(Project, RetroAnalysis).join(
-        RetroAnalysis, Project.id == RetroAnalysis.project_id
-    ).order_by(RetroAnalysis.deep_score.desc()).limit(20).all()
-
-    return [
-        {
-            "name": project.name,
-            "chain": project.chain,
-            "funding": project.funding,
-            "score": analysis.deep_score,
-            "retro_probability": analysis.retro_probability,
-            "capital_required": analysis.capital_required
-        }
-        for project, analysis in rows
-    ]
+    return {
+        "scanned": len(results),
+        "results": results
+    }

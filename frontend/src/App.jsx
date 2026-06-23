@@ -11,6 +11,17 @@ export default function App() {
     setProjects(res.data);
   };
   
+  const fetchTop = async () => {
+  const res = await axios.get("/api/top");
+  setProjects(Array.isArray(res.data) ? res.data : []);
+};
+
+  const manualScan = async () => {
+    setLoading(true);
+    await axios.post("/api/manual-scan");
+    await fetchTop();
+    setLoading(false);
+  };
 
   const scan = async () => {
     await axios.post("/api/scan", null, { params: { url } });
@@ -26,7 +37,12 @@ export default function App() {
       <h1>Airdrop Scanner</h1>
       <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Enter URL" />
       <button onClick={scan}>Scan</button>
-
+      <button
+        onClick={manualScan}
+        className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 transition"
+      >
+        {loading ? "Scanning..." : "Manual Scan Funding"}
+      </button>
       <table border="1" style={{ marginTop: 20 }}>
         <thead>
           <tr>
