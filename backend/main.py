@@ -43,8 +43,6 @@ def manual_scan(db: Session = Depends(get_db)):
 
     for p in projects:
 
-        #if p["has_token"]:
-            #continue
         if not is_candidate(p):
             continue
 
@@ -55,7 +53,7 @@ def manual_scan(db: Session = Depends(get_db)):
 
         try:
             data = deep_analyze(text)
-        except:
+        except Exception as e:
             print("LLM ERROR:", e)
             continue
 
