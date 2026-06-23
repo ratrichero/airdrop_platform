@@ -7,8 +7,10 @@ export default function App() {
 
   const fetchProjects = async () => {
     const res = await axios.get("/projects");
+    console.log(res.data);
     setProjects(res.data);
   };
+  
 
   const scan = async () => {
     await axios.post("/scan", null, { params: { url } });
@@ -34,7 +36,8 @@ export default function App() {
           </tr>
         </thead>
         <tbody>
-          {projects.map(p => (
+          {projects?.length > 0 &&
+            projects.map(p => (
             <tr key={p.id}>
               <td>{p.name}</td>
               <td>{p.chain}</td>
