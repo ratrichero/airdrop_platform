@@ -1,8 +1,7 @@
 import requests
 
-def fetch_defillama_projects(limit=20):
-    url = "https://api.llama.fi/protocols"
-    r = requests.get(url, timeout=10)
+def fetch_defillama(limit=20):
+    r = requests.get("https://api.llama.fi/protocols", timeout=10)
     data = r.json()
 
     projects = []

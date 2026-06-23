@@ -6,7 +6,7 @@ CHAIN_WEIGHT = {
     "Unknown": 1.0
 }
 
-def calculate_deep_score(data, funding, chain):
+def calculate_score(data, funding, chain):
 
     score = 0
 
@@ -23,6 +23,6 @@ def calculate_deep_score(data, funding, chain):
     if funding > 20_000_000:
         score += 10
 
-    chain_multiplier = CHAIN_WEIGHT.get(chain, 1.0)
+    multiplier = CHAIN_WEIGHT.get(chain, 1.0)
 
-    return round(score * chain_multiplier, 2)
+    return round(score * multiplier, 2)

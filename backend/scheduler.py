@@ -1,6 +1,8 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from engine import fetch_defillama, calculate_score
-from llm import deep_analyze
+from funding_engine import fetch_defillama
+from llm_engine import deep_analyze
+from ranking_engine import calculate_score
+from sybil_engine import classify_sybil
 from database import SessionLocal
 from models import Project, RetroAnalysis
 
@@ -11,24 +13,24 @@ def auto_scan():
 
     for p in projects:
 
-        has_token = bool(p.get("symbol"))
-        if has_token:
+        if p["has_token"]:
             continue
 
-        text = f"{p.get('name')} {p.get('chain')} funding:{p.get('tvl',0)}"
+        text = f"{p['name']} {p['chain']} funding:{p['funding']}"
 
         try:
             data = deep_analyze(text)
         except:
             continue
 
-        score = calculate_score(data, p.get("tvl",0), p.get("chain","Unknown"))
+        score = calculate_score(data, p["funding"], p["chain"])
+        sybil_risk = classify_sybil(data)
 
         project = Project(
-            name=p.get("name"),
-            chain=p.get("chain","Unknown"),
-            funding=p.get("tvl",0),
-            has_token=has_token
+            name=p["name"],
+            chain=p["chain"],
+            funding=p["funding"],
+            has_token=p["has_token"]
         )
 
         db.add(project)
@@ -44,6 +46,7 @@ def auto_scan():
             sybil_strength=data["sybil_strength"],
             capital_required=data["capital_required"],
             deep_score=score,
+            sybil_risk=sybil_risk,
             strategy=data["strategy"]
         )
 

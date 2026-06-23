@@ -2,19 +2,13 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 
 export default function App() {
-  const [url, setUrl] = useState("");
   const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const fetchProjects = async () => {
-    const res = await axios.get("/api/projects");
-    console.log(res.data);
-    setProjects(res.data);
-  };
-  
   const fetchTop = async () => {
-  const res = await axios.get("/api/top");
-  setProjects(Array.isArray(res.data) ? res.data : []);
-};
+    const res = await axios.get("/api/top");
+    setProjects(Array.isArray(res.data) ? res.data : []);
+  };
 
   const manualScan = async () => {
     setLoading(true);
@@ -23,47 +17,51 @@ export default function App() {
     setLoading(false);
   };
 
-  const scan = async () => {
-    await axios.post("/api/scan", null, { params: { url } });
-    fetchProjects();
-  };
-
   useEffect(() => {
-    fetchProjects();
+    fetchTop();
   }, []);
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Airdrop Scanner</h1>
-      <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Enter URL" />
-      <button onClick={scan}>Scan</button>
+    <div style={{ padding: 40, fontFamily: "Arial" }}>
+      <h1>🚀 Retro Intelligence V4</h1>
+
       <button
         onClick={manualScan}
-        className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 transition"
+        style={{
+          padding: "10px 20px",
+          marginBottom: "20px",
+          cursor: "pointer"
+        }}
       >
-        {loading ? "Scanning..." : "Manual Scan Funding"}
+        {loading ? "Scanning..." : "Manual Funding Scan"}
       </button>
-      <table border="1" style={{ marginTop: 20 }}>
+
+      <table border="1" cellPadding="8" cellSpacing="0">
         <thead>
           <tr>
             <th>Name</th>
             <th>Chain</th>
             <th>Funding</th>
+            <th>Score</th>
+            <th>Retro %</th>
+            <th>Capital</th>
+            <th>Sybil Risk</th>
           </tr>
         </thead>
         <tbody>
-          {projects?.length > 0 &&
-            projects.map(p => (
-            <tr key={p.id}>
+          {projects.map((p, idx) => (
+            <tr key={idx}>
               <td>{p.name}</td>
               <td>{p.chain}</td>
-              <td>{p.funding}</td>
+              <td>${p.funding}</td>
+              <td>{p.score}</td>
+              <td>{(p.retro_probability * 100).toFixed(1)}%</td>
+              <td>${p.capital_required}</td>
+              <td>{p.sybil_risk}</td>
             </tr>
           ))}
         </tbody>
       </table>
-
-      <a href="/api/export/csv">Export CSV</a>
     </div>
   );
 }

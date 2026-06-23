@@ -1,9 +1,16 @@
+import os
 from fastapi import FastAPI, Depends
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+
 from database import Base, engine, SessionLocal
 from models import Project, RetroAnalysis
-from engine import apply_decay
 from scheduler import start_scheduler
+from funding_engine import fetch_defillama
+from llm_engine import deep_analyze
+from ranking_engine import calculate_score
+from sybil_engine import classify_sybil
 
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
@@ -21,33 +28,6 @@ def get_db():
 def startup_event():
     start_scheduler()
 
-@app.get("/api/top")
-def top(db: Session = Depends(get_db)):
-
-    rows = db.query(Project, RetroAnalysis).join(
-        RetroAnalysis, Project.id == RetroAnalysis.project_id
-    ).order_by(RetroAnalysis.deep_score.desc()).limit(20).all()
-
-    return [
-        {
-            "name": p.name,
-            "chain": p.chain,
-            "funding": p.funding,
-            "score": apply_decay(a.deep_score, a.created_at),
-            "retro_probability": a.retro_probability,
-            "capital_required": a.capital_required
-        }
-        for p, a in rows
-    ]
-
-@app.get("/api/health")
-def health():
-    return {"status": "running"}
-
-from engine import fetch_defillama, calculate_score
-from llm import deep_analyze
-from models import Project, RetroAnalysis
-
 @app.post("/api/manual-scan")
 def manual_scan(db: Session = Depends(get_db)):
 
@@ -56,24 +36,24 @@ def manual_scan(db: Session = Depends(get_db)):
 
     for p in projects:
 
-        has_token = bool(p.get("symbol"))
-        if has_token:
+        if p["has_token"]:
             continue
 
-        text = f"{p.get('name')} {p.get('chain')} funding:{p.get('tvl',0)}"
+        text = f"{p['name']} {p['chain']} funding:{p['funding']}"
 
         try:
             data = deep_analyze(text)
         except:
             continue
 
-        score = calculate_score(data, p.get("tvl",0), p.get("chain","Unknown"))
+        score = calculate_score(data, p["funding"], p["chain"])
+        sybil_risk = classify_sybil(data)
 
         project = Project(
-            name=p.get("name"),
-            chain=p.get("chain","Unknown"),
-            funding=p.get("tvl",0),
-            has_token=has_token
+            name=p["name"],
+            chain=p["chain"],
+            funding=p["funding"],
+            has_token=p["has_token"]
         )
 
         db.add(project)
@@ -89,18 +69,64 @@ def manual_scan(db: Session = Depends(get_db)):
             sybil_strength=data["sybil_strength"],
             capital_required=data["capital_required"],
             deep_score=score,
+            sybil_risk=sybil_risk,
             strategy=data["strategy"]
         )
 
         db.add(analysis)
         db.commit()
 
-        results.append({
-            "name": p.get("name"),
-            "score": score
-        })
+        results.append({"name": p["name"], "score": score})
 
-    return {
-        "scanned": len(results),
-        "results": results
-    }
+    return results
+
+@app.get("/api/top")
+def top(db: Session = Depends(get_db)):
+
+    rows = db.query(Project, RetroAnalysis).join(
+        RetroAnalysis, Project.id == RetroAnalysis.project_id
+    ).order_by(RetroAnalysis.deep_score.desc()).limit(20).all()
+
+    return [
+        {
+            "name": p.name,
+            "chain": p.chain,
+            "funding": p.funding,
+            "score": a.deep_score,
+            "retro_probability": a.retro_probability,
+            "capital_required": a.capital_required,
+            "sybil_risk": a.sybil_risk
+        }
+        for p, a in rows
+    ]
+
+@app.get("/api/health")
+def health():
+    return {"status": "running"}
+
+# ===== Serve Frontend =====
+
+frontend_path = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "frontend",
+    "dist"
+)
+
+if os.path.exists(frontend_path):
+
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(frontend_path, "assets")),
+        name="assets"
+    )
+
+    @app.get("/")
+    def serve_root():
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        if full_path.startswith("api"):
+            return {"detail": "API route not found"}
+        return FileResponse(os.path.join(frontend_path, "index.html"))

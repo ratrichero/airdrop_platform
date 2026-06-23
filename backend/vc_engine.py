@@ -1,16 +1,17 @@
-TIER1 = ["a16z", "paradigm", "binance", "sequoia"]
-TIER2 = ["dragonfly", "multicoin", "framework"]
+import requests
 
-def estimate_funding_tier(project_name):
+def fetch_defillama(limit=20):
+    r = requests.get("https://api.llama.fi/protocols", timeout=10)
+    data = r.json()
 
-    name_lower = project_name.lower()
+    projects = []
 
-    for vc in TIER1:
-        if vc in name_lower:
-            return 5
+    for item in data[:limit]:
+        projects.append({
+            "name": item.get("name"),
+            "chain": item.get("chain", "Unknown"),
+            "funding": item.get("tvl", 0),
+            "has_token": bool(item.get("symbol"))
+        })
 
-    for vc in TIER2:
-        if vc in name_lower:
-            return 4
-
-    return 3
+    return projects

@@ -3,7 +3,6 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
-
 class Project(Base):
     __tablename__ = "projects"
 
@@ -30,7 +29,9 @@ class RetroAnalysis(Base):
     sybil_strength = Column(Integer)
     capital_required = Column(Float)
     deep_score = Column(Float)
+    sybil_risk = Column(String)
     strategy = Column(Text)
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
     project = relationship("Project", back_populates="analysis")
