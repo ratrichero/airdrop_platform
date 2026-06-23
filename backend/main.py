@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .database import Base, engine, SessionLocal
 from .models import Project, RetroAnalysis
 from .scheduler import start_scheduler
-from .funding_engine import fetch_defillama
+from .funding_engine import fetch_defillama, is_candidate
 from .llm_engine import deep_analyze
 from .ranking_engine import calculate_score
 from .sybil_engine import classify_sybil
