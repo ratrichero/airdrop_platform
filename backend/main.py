@@ -1,37 +1,24 @@
+import os
 import json
 import csv
-from fastapi import FastAPI, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+
 from .database import Base, engine, SessionLocal
 from .models import Project, Analysis
 from .scanner import scrape_url
 from .llm_provider import analyze_text
 from .scoring import calculate_score
 from .funding import fetch_defillama_protocols
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-import os
 
+# ✅ Create tables
 Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
 
-# Path tới build React
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-
-if os.path.exists(frontend_path):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_path, "assets")), name="assets")
-
-    @app.get("/")
-    def serve_react():
-        return FileResponse(os.path.join(frontend_path, "index.html"))
-
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        return FileResponse(os.path.join(frontend_path, "index.html"))
-
-
-
+# ✅ Dependency
 def get_db():
     db = SessionLocal()
     try:
@@ -39,43 +26,30 @@ def get_db():
     finally:
         db.close()
 
-@app.post("/scan")
+# =====================================================
+# ✅ API ROUTES (PREFIXED WITH /api)
+# =====================================================
+
+@app.post("/api/scan")
 def scan(url: str, db: Session = Depends(get_db)):
-    text = scrape_url(url)
-    data = analyze_text(text)
-
-    score = calculate_score(data["legitimacy"], data["complexity"], data["capital"])
-
-    project = Project(name=url, source="manual", url=url, chain="unknown", funding=0)
-    db.add(project)
-    db.commit()
-    db.refresh(project)
-
-    analysis = Analysis(
-        project_id=project.id,
-        legitimacy=data["legitimacy"],
-        complexity=data["complexity"],
-        capital=data["capital"],
-        risk=data["risk"],
-        strategy=data["strategy"],
-        final_score=score
-    )
-    db.add(analysis)
-    db.commit()
-
-    return {"score": score, "data": data}
-
-@app.post("/scan/funding")
-def scan_funding(db: Session = Depends(get_db)):
-    projects = fetch_defillama_protocols()
-    results = []
-
-    for p in projects:
-        text = f"{p['name']} {p['chain']} {p['funding']}"
+    try:
+        text = scrape_url(url)
         data = analyze_text(text)
-        score = calculate_score(data["legitimacy"], data["complexity"], data["capital"])
 
-        project = Project(name=p["name"], source="funding", url=p["url"], chain=p["chain"], funding=p["funding"])
+        score = calculate_score(
+            data["legitimacy"],
+            data["complexity"],
+            data["capital"]
+        )
+
+        project = Project(
+            name=url,
+            source="manual",
+            url=url,
+            chain="unknown",
+            funding=0
+        )
+
         db.add(project)
         db.commit()
         db.refresh(project)
@@ -89,23 +63,80 @@ def scan_funding(db: Session = Depends(get_db)):
             strategy=data["strategy"],
             final_score=score
         )
+
         db.add(analysis)
         db.commit()
 
-        results.append({"name": p["name"], "score": score})
+        return {"success": True, "score": score}
 
-    return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/projects")
+
+@app.get("/api/projects")
 def list_projects(chain: str = None, db: Session = Depends(get_db)):
     query = db.query(Project)
+
     if chain:
         query = query.filter(Project.chain == chain)
+
     return query.all()
 
-@app.get("/export/csv")
+
+@app.post("/api/scan/funding")
+def scan_funding(db: Session = Depends(get_db)):
+    projects = fetch_defillama_protocols()
+    results = []
+
+    for p in projects[:10]:
+        try:
+            text = f"{p['name']} {p['chain']} {p['funding']}"
+            data = analyze_text(text)
+
+            score = calculate_score(
+                data["legitimacy"],
+                data["complexity"],
+                data["capital"]
+            )
+
+            project = Project(
+                name=p["name"],
+                source="funding",
+                url=p["url"],
+                chain=p["chain"],
+                funding=p["funding"]
+            )
+
+            db.add(project)
+            db.commit()
+            db.refresh(project)
+
+            analysis = Analysis(
+                project_id=project.id,
+                legitimacy=data["legitimacy"],
+                complexity=data["complexity"],
+                capital=data["capital"],
+                risk=data["risk"],
+                strategy=data["strategy"],
+                final_score=score
+            )
+
+            db.add(analysis)
+            db.commit()
+
+            results.append({"name": p["name"], "score": score})
+
+        except:
+            continue
+
+    return {"results": results}
+
+
+@app.get("/api/export/csv")
 def export_csv(db: Session = Depends(get_db)):
-    rows = db.query(Project, Analysis).join(Analysis, Project.id == Analysis.project_id).all()
+    rows = db.query(Project, Analysis).join(
+        Analysis, Project.id == Analysis.project_id
+    ).all()
 
     def generate():
         yield "name,chain,funding,legitimacy,complexity,capital,risk,score,strategy\n"
@@ -113,3 +144,40 @@ def export_csv(db: Session = Depends(get_db)):
             yield f"{project.name},{project.chain},{project.funding},{analysis.legitimacy},{analysis.complexity},{analysis.capital},{analysis.risk},{analysis.final_score},{analysis.strategy}\n"
 
     return StreamingResponse(generate(), media_type="text/csv")
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+
+# =====================================================
+# ✅ FRONTEND STATIC SERVING
+# =====================================================
+
+frontend_path = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "frontend",
+    "dist"
+)
+
+# ✅ Serve assets
+if os.path.exists(frontend_path):
+
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(frontend_path, "assets")),
+        name="assets"
+    )
+
+    @app.get("/")
+    def serve_root():
+        return FileResponse(os.path.join(frontend_path, "index.html"))
+
+    # ✅ SPA fallback (ONLY for non-API routes)
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        if full_path.startswith("api"):
+            raise HTTPException(status_code=404, detail="API route not found")
+        return FileResponse(os.path.join(frontend_path, "index.html"))

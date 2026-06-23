@@ -6,14 +6,14 @@ export default function App() {
   const [projects, setProjects] = useState([]);
 
   const fetchProjects = async () => {
-    const res = await axios.get("/projects");
+    const res = await axios.get("/api/projects");
     console.log(res.data);
     setProjects(res.data);
   };
   
 
   const scan = async () => {
-    await axios.post("/scan", null, { params: { url } });
+    await axios.post("/api/scan", null, { params: { url } });
     fetchProjects();
   };
 
@@ -47,7 +47,7 @@ export default function App() {
         </tbody>
       </table>
 
-      <a href="/export/csv">Export CSV</a>
+      <a href="/api/export/csv">Export CSV</a>
     </div>
   );
 }
